@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Data Validator Console – Single File</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; background:#f8fafc; margin:0; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .card { background:#fff; border-radius:12px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 1px 3px rgba(0,0,0,.1); padding:16px; }
+    .grid { display:grid; gap:16px; }
+    @media(min-width: 900px){ .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+    label { display:block; font-size:14px; color:#374151; margin-bottom:6px; }
+    input[type=file] { width:100%; }
+    button { border:1px solid #e5e7eb; background:#111827; color:#fff; padding:8px 12px; border-radius:8px; cursor:pointer; }
+    button.secondary { background:#e5e7eb; color:#111827; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .muted { color:#6b7280; font-size: 14px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
+    table { width:100%; border-collapse:collapse; font-size: 14px; }
+    th, td { text-align:left; padding:8px; border-bottom:1px solid #eee; }
+    thead { background:#f3f4f6; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; }
+    textarea { width:100%; height:280px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="row" style="justify-content:space-between;">
+      <h1>Data Validator Console</h1>
+      <div class="muted">Single-file • Spec preloaded • Client-side</div>
+    </header>
+
+    <div class="card">
+      <div class="grid grid-3">
+        <div>
+          <label>Upload Data (CSV/XLSX/JSON)</label>
+          <input id="dataFile" type="file" accept=".csv,.xls,.xlsx,.json" />
+          <div id="dataName" class="muted"></div>
+        </div>
+        <div>
+          <label>Spec</label>
+          <div class="muted">Loaded automatically from this file</div>
+          <div id="specName" class="muted">embeddedSpec.json</div>
+        </div>
+        <div class="row">
+          <button id="btnValidate">Validate</button>
+          <button id="btnClear" class="secondary">Clear</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="checkbox" id="autoCorrect" />
+        <label for="autoCorrect">Auto-correct (trim, whitespace collapse, case, case-insensitive enum)</label>
+      </div>
+      <div class="muted" id="statusLine" style="margin-top:8px">Spec loaded. Upload your data and click Validate.</div>
+    </div>
+
+    <div style="margin-top:16px" class="card">
+      <h3>Schema (JSON)</h3>
+      <textarea id="schemaBox"></textarea>
+    </div>
+
+    <div style="margin-top:16px" class="card">
+      <h3>Regex Rules (JSON)</h3>
+      <textarea id="regexBox">{{}}</textarea>
+    </div>
+
+    <div style="margin-top:16px" class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div>
+          <div class="muted">Status: <span id="statusText">Idle</span></div>
+          <div id="messageText"></div>
+        </div>
+        <div class="row">
+          <button id="btnDownloadIssues" class="secondary" disabled>Download Issues CSV</button>
+          <button id="btnDownloadCleaned" disabled>Download Cleaned CSV</button>
+        </div>
+      </div>
+      <div style="margin-top:12px; border:1px solid #eee; border-radius:8px; overflow:auto; max-height: 420px;">
+        <table>
+          <thead><tr><th>Row</th><th>Type</th><th>Field</th><th>Message</th></tr></thead>
+          <tbody id="issuesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import Ajv from 'https://cdn.jsdelivr.net/npm/ajv@8/dist/ajv.min.js';
+    import addFormats from 'https://cdn.jsdelivr.net/npm/ajv-formats@3/dist/ajv-formats.min.js';
+
+    const EMBEDDED_SPEC = [{"Field": "Site Name", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Work Zone", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Building Name", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Floor", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Room", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Status", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "TagID", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Reason Not Tagged", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Asset Number", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Asset Name", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Asset Description", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "JACS Code", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "JACS Code ID", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Asset Status", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Asset Record Status", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Manufacturer", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Model", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Serial", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "In-Service Date", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "CA-Age", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "CA-Condition", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "CA-Environment", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Capacity Unit", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Capacity Quantity", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}, {"Field": "Images", "Required": NaN, "Type": NaN, "Min": NaN, "Max": NaN, "Allowed": NaN, "Regex": NaN, "Case": NaN, "Unique": NaN, "Trim": NaN, "NormalizeWhitespace": NaN}];
+
+    const specHeader = ["Field","Required","Type","Min","Max","Allowed","Regex","Case","Unique","Trim","NormalizeWhitespace"];
+    let specRows = cleanSpec(EMBEDDED_SPEC);
+    let regexRules = {};
+    let schema = buildSchemaFromSpec(specRows);
+    document.getElementById('schemaBox').value = JSON.stringify(schema, null, 2);
+    document.getElementById('regexBox').value = JSON.stringify(buildRegexFromSpec(specRows), null, 2);
+
+    // State
+    let dataArray = [];
+    const el = (id)=> document.getElementById(id);
+    const setText = (id, v)=> (el(id).textContent = v);
+
+    el('dataFile').addEventListener('change', async (e)=>{
+      const file = e.target.files?.[0]; if(!file) return;
+      el('dataName').textContent = file.name;
+      const ext = (file.name.split('.').pop()||'').toLowerCase();
+      if(ext === 'csv'){
+        const txt = await file.text();
+        const res = Papa.parse(txt, { header: true, skipEmptyLines: true });
+        dataArray = res.data || [];
+        setText('statusLine', `Loaded ${dataArray.length} CSV rows.`);
+      } else if(['xls','xlsx'].includes(ext)){
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type:'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        dataArray = XLSX.utils.sheet_to_json(ws);
+        setText('statusLine', `Loaded ${dataArray.length} XLSX rows.`);
+      } else {
+        const txt = await file.text();
+        try { const json = JSON.parse(txt); dataArray = Array.isArray(json)? json : [json]; setText('statusLine', `Loaded ${dataArray.length} JSON record(s).`); }
+        catch { setText('statusLine', 'Unsupported data type. Use CSV/JSON/XLSX.'); }
+      }
+    });
+
+    el('btnClear').addEventListener('click', ()=>{
+      dataArray = [];
+      el('dataFile').value='';
+      el('dataName').textContent='';
+      el('issuesBody').innerHTML='';
+      setText('statusLine','Cleared.');
+      setText('messageText','');
+      el('btnDownloadIssues').disabled = true;
+      el('btnDownloadCleaned').disabled = true;
+    });
+
+    el('btnValidate').addEventListener('click', async ()=>{
+      setText('statusText','Validating...'); setText('messageText','');
+
+      let schemaObj; try { schemaObj = JSON.parse(el('schemaBox').value || '{}'); } catch(e){ setText('statusText','Idle'); setText('messageText','Schema JSON invalid.'); return; }
+      let regexObj; try { regexObj = JSON.parse(el('regexBox').value || '{}'); } catch(e){ setText('statusText','Idle'); setText('messageText','Regex rules JSON invalid.'); return; }
+      const ajv = new Ajv({ allErrors: true, strict: false }); addFormats(ajv);
+      const validate = ajv.compile(schemaObj.items || {});
+      const regexMap = {}; for(const [f,p] of Object.entries(regexObj||{})) { try { regexMap[f] = new RegExp(p); } catch {} }
+
+      const issues = []; const cleaned = dataArray.map((r)=> ({...r}));
+      const uniqueFields = new Set(); const trimFields = new Set(); const normWSFields = new Set(); const caseRules = {}; const badRegexFields = [];
+      for(const r of specRows){ const f=(r.Field||'').trim(); if(!f) continue; if(asBool(r.Unique)) uniqueFields.add(f); if(asBool(r.Trim)) trimFields.add(f); if(asBool(r.NormalizeWhitespace)) normWSFields.add(f); if(r.Case) caseRules[f] = parseCaseRule(r.Case); if(r.Regex){ try{ new RegExp(String(r.Regex)); }catch{ badRegexFields.push(f); } } }
+
+      const uniqueTrack = {}; uniqueFields.forEach((f)=> uniqueTrack[f] = new Map());
+
+      cleaned.forEach((row, i)=> {
+        const idx = i+1;
+        const valid = validate(row);
+        if(!valid && validate.errors){ for(const err of validate.errors){ issues.push({ row: idx, type:'schema', field: cleanPath(err.instancePath), message: `${err.keyword} ${err.message||'error'}` }); } }
+        for(const [field, rx] of Object.entries(regexMap)){ const val = get(row, field); if(val==null || val==='') continue; if(!(rx).test(String(val))) { issues.push({ row: idx, type:'regex', field, message:`Value "${truncate(String(val))}" does not match ${rx}` }); } }
+        for(const r of specRows){ const f=(r.Field||'').trim(); if(!f) continue; let val = get(row, f);
+          if(asBool(r.Required) && (val==null || String(val).trim()==='')){ issues.push({ row: idx, type:'schema', field:f, message:'Required value missing' }); continue; }
+          if(typeof val === 'string'){
+            if(trimFields.has(f) && (val.startsWith(' ') || val.endsWith(' '))){ const corrected = val.trim(); issues.push({ row: idx, type:'whitespace', field:f, message:'Leading/trailing spaces' }); if(el('autoCorrect').checked){ set(row, f, corrected); val = corrected; } }
+            if(normWSFields.has(f) && /\s{2,}/.test(val)){ const corrected = val.replace(/\s+/g,' '); issues.push({ row: idx, type:'whitespace', field:f, message:'Multiple consecutive spaces' }); if(el('autoCorrect').checked){ set(row, f, corrected); val = corrected; } }
+          }
+          if(typeof val === 'string' && caseRules[f]){ const expected = applyCase(val, caseRules[f].mode); if(expected !== val){ issues.push({ row: idx, type:'case', field:f, message:`Expected ${caseRules[f].mode} case` }); if(el('autoCorrect').checked){ set(row, f, expected); } } }
+          if(r.Allowed){ const allowed = splitList(r.Allowed); if(allowed.length && val!=null && String(val).trim()!==''){ const s = String(val); if(!allowed.includes(s)){ const map = {}; allowed.forEach(v => map[v.toLowerCase()] = v); if(map[s.toLowerCase()]){ issues.push({ row: idx, type:'enum', field:f, message:'Adjusted to allowed value (case-insensitive match)' }); if(el('autoCorrect').checked){ set(row, f, map[s.toLowerCase()]); } } else { issues.push({ row: idx, type:'enum', field:f, message:`Value not in allowed list ${allowed.join('|')}` }); } } } }
+          if(r.Regex && val!=null && String(val).trim()!==''){ try{ const rx = new RegExp(String(r.Regex)); if(!rx.test(String(val))){ issues.push({ row: idx, type:'regex', field:f, message:`Does not match /${String(r.Regex)}/` }); } } catch { issues.push({ row: idx, type:'spec', field:f, message:'Invalid regex in spec' }); } }
+          if(r.Min!=null || r.Max!=null){ const t = String(r.Type||'string').toLowerCase(); if(t==='integer' || t==='number'){ const num = Number(val); if(isFiniteNumber(r.Min) && !(Number.isFinite(num) && num>=Number(r.Min))) issues.push({ row: idx, type:'range', field:f, message:`Below minimum ${r.Min}` }); if(isFiniteNumber(r.Max) && !(Number.isFinite(num) && num<=Number(r.Max))) issues.push({ row: idx, type:'range', field:f, message:`Above maximum ${r.Max}` }); } else { const len = (val==null?0:String(val).length); if(isFiniteNumber(r.Min) && len < Number(r.Min)) issues.push({ row: idx, type:'length', field:f, message:`Length < ${r.Min}` }); if(isFiniteNumber(r.Max) && len > Number(r.Max)) issues.push({ row: idx, type:'length', field:f, message:`Length > ${r.Max}` }); } }
+          if(asBool(r.Unique)){ const key = String(val ?? ''); const map = uniqueTrack[f]; const arr = map.get(key) || []; arr.push(idx); map.set(key, arr); }
+        }
+      });
+
+      for(const [field, map] of Object.entries(uniqueTrack)){ for(const [key, rows] of map.entries()){ if(key==='' || rows.length<=1) continue; issues.push({ row: Math.min(...rows), type:'unique', field, message:`Duplicate value at rows ${rows.join(', ')}` }); } }
+      for(const f of badRegexFields) issues.push({ row: 0, type:'spec', field:f, message:'Invalid regex in spec' });
+
+      const tbody = el('issuesBody'); tbody.innerHTML='';
+      for(const e of issues){ const tr = document.createElement('tr'); tr.innerHTML = `<td>${e.row}</td><td>${e.type}</td><td class="mono">${e.field||'(root)'}</td><td>${e.message}</td>`; tbody.appendChild(tr); }
+      setText('statusText','Done');
+      setText('messageText', issues.length ? `Found ${issues.length} issues across ${dataArray.length} records.` : `No issues across ${dataArray.length} records.`);
+
+      el('btnDownloadIssues').disabled = (issues.length===0);
+      el('btnDownloadCleaned').disabled = (dataArray.length===0);
+      window.__DVC_CLEANED__ = cleaned;
+      window.__DVC_ISSUES__ = issues;
+    });
+
+    // Builders
+    function buildSchemaFromSpec(specRows){
+      const required = []; const properties = {};
+      for(const r of specRows){
+        const field = (r.Field||'').trim(); if(!field) continue; if(asBool(r.Required)) required.push(field);
+        const type = String(r.Type||'string').toLowerCase(); const prop = {};
+        if(type==='integer' || type==='number'){ prop.type = (type==='integer'?'integer':'number'); if(isFiniteNumber(r.Min)) prop.minimum = Number(r.Min); if(isFiniteNumber(r.Max)) prop.maximum = Number(r.Max); }
+        else if(type==='boolean'){ prop.type='boolean'; }
+        else if(type==='date'){ prop.type='string'; prop.format='date'; }
+        else if(type==='datetime'){ prop.type='string'; prop.format='date-time'; }
+        else { prop.type='string'; if(isFiniteNumber(r.Min)) prop.minLength=Number(r.Min); if(isFiniteNumber(r.Max)) prop.maxLength=Number(r.Max); }
+        if(r.Allowed){ const list = splitList(r.Allowed); if(list.length) prop.enum = list; }
+        properties[field] = prop;
+      }
+      return { "$schema":"https://json-schema.org/draft/2020-12/schema", "type":"array", "items": { "type":"object", "required": required, "additionalProperties": true, "properties": properties } };
+    }
+    function buildRegexFromSpec(specRows){ const rr = {}; for(const r of specRows){ if(r.Regex) rr[r.Field] = String(r.Regex); } return rr; }
+
+    // Utils
+    function truncate(s, n = 80){ s=String(s); return s.length>n ? s.slice(0,n)+'…' : s; }
+    function get(obj, path){ if(!path) return obj; return path.split('.').reduce((o,k)=> o ? o[k] : undefined, obj); }
+    function set(obj, path, value){ const parts = path.split('.'); let cur=obj; for(let i=0;i<parts.length-1;i++){ const k=parts[i]; if(typeof cur[k] !== 'object' || cur[k]==null) cur[k]={}; cur=cur[k]; } cur[parts[parts.length-1]] = value; }
+    function cleanPath(p){ return String(p||'').replace(/^\//,''); }
+    function isFiniteNumber(v){ const n = Number(v); return Number.isFinite(n); }
+    function splitList(v){ return String(v||'').split(/[|,]/).map(s=>s.trim()).filter(Boolean); }
+    function asBool(v){ if(typeof v === 'boolean') return v; const s=String(v||'').toLowerCase(); return (s==='true'||s==='yes'||s==='y'||s==='1'||s==='x'); }
+    function parseCaseRule(v){ const s=String(v||'').toLowerCase(); if(['upper','lower','title','exact'].includes(s)) return { mode:s }; return { mode:'exact' }; }
+    function applyCase(s, mode){ if(mode==='upper') return String(s).toUpperCase(); if(mode==='lower') return String(s).toLowerCase(); if(mode==='title') return String(s).replace(/\w\S*/g, (w)=> w[0].toUpperCase() + w.slice(1).toLowerCase()); return s; }
+
+    // Initialize UI
+    document.getElementById('autoCorrect').checked = false;
+  </script>
+</body>
+</html>
